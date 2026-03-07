@@ -1,0 +1,13 @@
+{
+  "from": "[Sender Agent Name]",
+  "to": "[Receiver Agent Name]",
+  "date": "2026-01-01T09:00:00+08:00",
+  "subject": "[Task/Info/Question/Reply] Brief description",
+  "priority": "P2",
+  "body": "Your message content here.\n\nYou can use multiple lines.\n\n## Sections work too\n\n- Bullet points for clarity\n- Action items clearly listed",
+  "references": [
+    "https://github.com/org/repo/issues/1",
+    "path/to/relevant/file.md"
+  ],
+  "expects_reply": true
+}
