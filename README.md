@@ -1,188 +1,257 @@
-# Agent Team OS
+# atos
 
-> Run a multi-AI-agent team like a real company.
+> Agent teamwork in your terminal.
 
-One-Person Company founders: stop using AI as a tool. Start using it as a **team**.
+A CLI-first coordination tool for multi-AI-agent teams. Works with **any** agent runtime — Claude Code, OpenCode, GitHub Copilot, Cursor, or your own scripts.
 
-Agent Team OS is an open-source framework for building, coordinating, and scaling a team of AI agents that work together like a real company — with roles, personas, async communication, SOPs, and governance.
+```bash
+npx atos-cli team init my-team
+npx atos-cli team join --name kira --role cto
+npx atos-cli team join --name raven --role devops
 
-## Why This Exists
+ATOS_AGENT=kira npx atos-cli mail send --to raven --subject "Deploy staging" --body "Ship it today"
+ATOS_AGENT=raven npx atos-cli mail inbox --unread
+ATOS_AGENT=raven npx atos-cli task list --mine
+```
 
-Most people use AI agents in isolation: one prompt, one task, one response.
+## Why
 
-But what if you could run a **team** of AI agents — each with a defined role, personality, and expertise — that communicate asynchronously, hand off work, track projects, and operate with the discipline of a real startup?
+Every multi-agent framework today is either **Python-locked** (CrewAI, AutoGen, LangGraph), **platform-locked** (Claude Code Teams, OpenAI Swarm), or **heavyweight** (requires Docker, databases, web servers).
 
-That's what Agent Team OS does. It's born from running a production AI agent team (5 agents, 10+ real engineering tasks daily) for a one-person company.
+atos is none of those. It's a single CLI binary that any agent with bash access can use. No framework, no SDK, no server.
+
+| | Existing frameworks | atos |
+|---|---|---|
+| Interface | Python SDK, Web UI | **CLI** (bash) |
+| Runtime | Framework-locked | **Any agent** |
+| Install | pip + dependencies + config | **`npx atos-cli`** |
+| Storage | Databases, servers | **SQLite** (zero-config) |
+| Complexity | Graphs, DAGs, hierarchies | **Messages + Tasks** |
+
+## Install
+
+```bash
+# Use directly (no install needed)
+npx atos-cli <command>
+
+# Or install globally
+npm install -g atos-cli
+atos <command>
+```
+
+Requires Node.js >= 18.
+
+## Quick Start
+
+### 1. Initialize a team
+
+```bash
+atos team init my-team
+```
+
+This creates a `.atos/` directory with a SQLite database.
+
+### 2. Register agents
+
+```bash
+atos team join --name hub --role coordinator
+atos team join --name kira --role cto
+atos team join --name raven --role devops
+atos team members
+```
+
+### 3. Set agent identity
+
+Each agent identifies itself via the `ATOS_AGENT` environment variable:
+
+```bash
+# In Claude Code's CLAUDE.md:
+export ATOS_AGENT=kira
+
+# Or use the --agent flag:
+atos --agent kira mail inbox
+```
+
+### 4. Send messages
+
+```bash
+# Kira sends a task to Raven
+ATOS_AGENT=kira atos mail send \
+  --to raven \
+  --subject "Deploy staging" \
+  --body "Deploy the latest build to staging today" \
+  --priority P1
+
+# Raven checks inbox
+ATOS_AGENT=raven atos mail inbox --unread
+# → JSON array of messages
+
+# Raven reads and replies
+ATOS_AGENT=raven atos mail read 1
+ATOS_AGENT=raven atos mail reply 1 --body "Done, deployed at 14:30"
+```
+
+### 5. Track tasks
+
+```bash
+# Create a task
+ATOS_AGENT=kira atos task create \
+  --title "Fix auth errors" \
+  --assignee raven \
+  --priority P0
+
+# Raven checks assigned tasks
+ATOS_AGENT=raven atos task list --mine
+
+# Mark done
+ATOS_AGENT=raven atos task done 1 --note "Fixed null pointer in auth middleware"
+```
+
+## Commands
+
+### Team
+
+| Command | Description |
+|---------|-------------|
+| `atos team init <name>` | Initialize a new team |
+| `atos team join --name <n> --role <r>` | Register an agent |
+| `atos team members` | List all team members |
+| `atos team remove <name>` | Remove an agent |
+
+### Mail
+
+| Command | Description |
+|---------|-------------|
+| `atos mail send --to <agent> --subject <s> --body <b>` | Send a message |
+| `atos mail inbox [--unread] [--from <agent>]` | List inbox messages |
+| `atos mail read <id>` | Read a message (marks as read) |
+| `atos mail reply <id> --body <b>` | Reply to a message |
+| `atos mail count` | Count total/unread messages |
+
+### Task
+
+| Command | Description |
+|---------|-------------|
+| `atos task create --title <t> [--assignee <a>]` | Create a task |
+| `atos task list [--mine] [--status open\|done\|blocked]` | List tasks |
+| `atos task show <id>` | Show task details |
+| `atos task update <id> --status <s>` | Update a task |
+| `atos task done <id> [--note <text>]` | Mark task as done |
+
+### Global Options
+
+```
+--dir <path>      .atos directory location (default: auto-detect)
+--format <fmt>    Output format: json (default) | human
+--agent <name>    Act as this agent (or set ATOS_AGENT env var)
+--quiet           Suppress non-essential output
+```
+
+## Output
+
+All commands output **structured JSON** by default — designed for AI agents to parse reliably.
+
+```bash
+$ atos team members
+[
+  {"agent": "kira", "role": "cto", "persona_file": null, "joined_at": "2026-03-12 07:05:21"},
+  {"agent": "raven", "role": "devops", "persona_file": null, "joined_at": "2026-03-12 07:05:28"}
+]
+
+$ atos --format human team members
+agent  role    persona_file  joined_at
+-----  ------  ------------  -------------------
+kira   cto                   2026-03-12 07:05:21
+raven  devops                2026-03-12 07:05:28
+```
+
+## Storage
+
+All data lives in `.atos/atos.db` (SQLite). No server, no configuration.
+
+```
+.atos/
+├── atos.db        # SQLite: messages, tasks, team config
+├── personas/      # Markdown: agent persona files
+└── sops/          # Markdown: standard operating procedures
+```
+
+The `.atos/` directory can be committed to git for team sync and audit trail.
+
+## Use with AI Agent Runtimes
+
+### Claude Code
+
+Add to your project's `CLAUDE.md`:
+
+```markdown
+## Agent Coordination
+This project uses atos for multi-agent coordination.
+Set `export ATOS_AGENT=<your-name>` before running commands.
+Check `atos mail inbox --unread` at the start of each session.
+```
+
+### Any agent with bash access
+
+If your agent can run shell commands, it can use atos:
+
+```bash
+# Check for new messages
+atos mail inbox --unread
+
+# Create a task
+atos task create --title "Implement feature X" --assignee other-agent
+
+# Report completion
+atos task done 3 --note "Implemented and tested"
+```
 
 ## Architecture
 
 ```
-                    ┌─────────────┐
-                    │     You     │
-                    │  (CEO/Solo) │
-                    └──────┬──────┘
-                           │
-                    ┌──────▼──────┐
-                    │   Chief     │
-                    │  Assistant  │
-                    │   (Hub)     │
-                    └──┬──┬──┬───┘
-                       │  │  │
-          ┌────────────┘  │  └────────────┐
-          │               │               │
-   ┌──────▼──────┐  ┌────▼─────┐  ┌──────▼──────┐
-   │    Tech     │  │Coordinator│  │  Business   │
-   │  Department │  │          │  │ Department  │
-   │             │  └──────────┘  │             │
-   │ CTO         │                │ CMO         │
-   │ DevOps      │                │             │
-   └─────────────┘                └─────────────┘
+Any Agent Runtime (Claude Code, OpenCode, Copilot, ...)
+    │
+    ├── Has MCP support  → MCP Server (Phase 2, thin wrapper)
+    │
+    └── Has Bash access  → atos CLI directly
+                              │
+                         ┌────▼────┐
+                         │ atos CLI │  JSON output, exit codes, idempotent
+                         └────┬────┘
+                              │
+                       ┌──────▼──────┐
+                       │  .atos/     │  SQLite + Markdown files
+                       │  atos.db    │  Git for sync & audit
+                       └─────────────┘
 ```
 
-**Hub-and-Spoke Model**: All tasks flow through one central coordinator agent. This prevents chaos and ensures information integrity.
+## Roadmap
 
-## Core Components
+- [x] **Phase 1**: Core CLI — team, mail, task (current)
+- [ ] **Phase 2**: MCP server + presence + SOPs + git sync
+- [ ] **Phase 3**: Knowledge integration (OpenViking) + remote server
+- [ ] **Phase 4**: Ecosystem (runtime templates, dashboard UI, plugins)
 
-### 1. Persona System
-Each agent has a complete identity: name, age, background, personality, skills, communication style, and hard boundaries. This isn't roleplay — it's what enables agents to make **role-appropriate decisions** under ambiguous instructions.
+See [docs/v2-architecture.md](docs/v2-architecture.md) for the full design.
 
-→ [Persona Design Guide](docs/persona-design-guide.md) | [Templates](templates/personas/)
+## Design Docs
 
-### 2. Async Mailbox Protocol
-Agents communicate via structured JSON messages stored in git. Every message is versioned, traceable, and survives session restarts.
+- [Architecture RFC](docs/v2-architecture.md) — CLI design, storage, implementation plan
+- [Output Format RFC](docs/v2-output-format-rfc.md) — Why JSON, research findings
+- [Competitive Landscape](docs/v2-competitive-landscape.md) — How atos compares to CrewAI, AutoGen, A2A, etc.
 
-```
-mailbox/
-├── hub-to-cto/
-│   └── 20260307-1400-deploy-task.json
-├── cto-to-hub/
-│   └── 20260307-1530-deploy-done.json
-└── ...
-```
+## Prior Art (v1)
 
-→ [Mailbox Protocol](docs/mailbox-protocol.md) | [Templates](templates/mailbox/)
+atos evolved from Agent Team OS v1, a documentation/convention framework for multi-agent teams. The v1 guides are still useful for team design:
 
-### 3. SOP Framework
-Standard Operating Procedures define what each agent does on a recurring basis — hourly, daily, or triggered by events.
-
-→ [SOP Design Guide](docs/sop-design-guide.md) | [Templates](templates/sops/)
-
-### 4. Team Scaling Playbook
-Start with 2 agents. Scale to 8. The framework handles organizational restructuring, onboarding, handovers, and communication matrix updates.
-
-→ [Scaling Guide](docs/scaling-guide.md)
-
-### 5. Governance
-Three safety principles that prevent AI agent teams from going off the rails:
-
-1. **No vague acceleration** — "Do it faster" is not a valid instruction
-2. **Quality baseline is non-negotiable** — Every output must pass self-review before delivery
-3. **External actions require human confirmation** — Publishing, sending, deploying = ask first
-
-## Quick Start
-
-### Option A: Start from scratch (5 minutes)
-
-```bash
-# Clone the template
-git clone https://github.com/warren-wupeng/agent-team-os.git my-agent-team
-cd my-agent-team
-
-# Copy the starter config
-cp examples/3-person-team/* .
-
-# Edit personas to match your needs
-# Then launch your first agent with the startup prompt in examples/
-```
-
-### Option B: Add to existing project
-
-```bash
-# Copy just the templates you need
-cp -r templates/personas/ your-project/team-personas/
-cp -r templates/mailbox/ your-project/mailbox/
-cp -r templates/sops/ your-project/team-sops/
-```
-
-### Your First Team (3 agents)
-
-| Role | What They Do | Talks To |
-|------|-------------|----------|
-| **Chief Assistant (Hub)** | Decomposes tasks, coordinates, synthesizes outputs | You + Everyone |
-| **Tech Lead** | Architecture, code, technical decisions | Hub + DevOps |
-| **Content Lead** | Writing, narrative, external communication | Hub |
-
-See [examples/3-person-team/](examples/3-person-team/) for ready-to-use configs.
-
-## How It Works in Practice
-
-**Morning**: You tell the Hub agent "I need to launch feature X today."
-
-**Hub decomposes** the task: Tech Lead handles implementation, Content Lead prepares the announcement, Hub tracks progress.
-
-**Agents work async**: Each agent picks up tasks from mailbox, executes, reports back via mailbox.
-
-**Hub synthesizes**: Collects all outputs, resolves conflicts, delivers a unified result to you.
-
-**Evening**: Hub runs daily SOP — status report with blockers, completed items, and tomorrow's priorities.
-
-You talked to **one** agent. **Three** agents worked on your task.
-
-## Directory Structure
-
-```
-your-project/
-├── team-personas/           # Agent identity files
-│   ├── hub-persona.md
-│   ├── tech-lead-persona.md
-│   └── content-lead-persona.md
-├── mailbox/                 # Async communication
-│   ├── hub-to-tech/
-│   ├── tech-to-hub/
-│   ├── hub-to-content/
-│   └── content-to-hub/
-├── team-sops/               # Standard operating procedures
-│   ├── hub-daily-sop.md
-│   └── tech-hourly-sop.md
-├── team-architecture.md     # Team structure + comm matrix
-└── team-principles.md       # Governance rules
-```
-
-## Scaling Your Team
-
-| Phase | Team Size | New Roles | Trigger |
-|-------|-----------|-----------|---------|
-| Starter | 2-3 | Hub + Tech + Content | Day 1 |
-| Growth | 4-5 | + DevOps, + Coordinator | Hub overloaded, tasks dropping |
-| Full | 6-8 | + QA, + Relations, + Specialist | Multi-project, external comms |
-
-The [Scaling Guide](docs/scaling-guide.md) covers: when to add agents, how to onboard, handover protocols, and communication matrix expansion.
-
-## Principles
-
-This framework is opinionated. Here's what we believe:
-
-- **Hub-and-spoke beats flat** — One coordinator prevents information chaos
-- **Personas aren't decoration** — They're decision-making frameworks
-- **Async over sync** — Git mailbox beats real-time chat for agent teams
-- **SOPs create reliability** — Agents without routines forget things
-- **Scale slowly** — Add one agent at a time, verify, then grow
-- **Human-in-the-loop for external actions** — AI decides internally, human approves externally
-
-## Platform Agnostic
-
-Agent Team OS works with any AI platform that supports persistent sessions:
-
-- Claude (via API, Claude Code, or hosted platforms)
-- ChatGPT (Custom GPTs or API)
-- Open-source models (via any chat interface)
-- Hybrid setups (different models for different agents)
-
-The framework is about **coordination patterns**, not model-specific features.
+- [Persona Design Guide](docs/persona-design-guide.md)
+- [Mailbox Protocol](docs/mailbox-protocol.md)
+- [SOP Design Guide](docs/sop-design-guide.md)
+- [Scaling Guide](docs/scaling-guide.md)
 
 ## Contributing
 
-This project is based on real production experience. If you're running your own agent team and have patterns to share, PRs are welcome.
+PRs welcome. This project is based on real production experience running a multi-AI-agent team for a one-person company.
 
 ## License
 
@@ -190,4 +259,4 @@ MIT
 
 ---
 
-Built by [Warren Wu](https://github.com/warren-wupeng) — running a one-person company with an AI agent team.
+Built by [Warren Wu](https://github.com/warren-wupeng)
