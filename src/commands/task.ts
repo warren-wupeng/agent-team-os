@@ -166,6 +166,41 @@ export function registerTaskCommands(
     );
 
   task
+    .command("search")
+    .argument("<query>", "Full-text search query")
+    .option("--status <status>", "Filter by status")
+    .option("--assignee <agent>", "Filter by assignee")
+    .option("--limit <n>", "Limit results", "20")
+    .description("Full-text search across tasks")
+    .action(
+      (
+        query: string,
+        opts: { status?: string; assignee?: string; limit: string }
+      ) => {
+        const db = openDatabase(getDir());
+        let sql = `SELECT t.id, t.title, t.status, t.assignee, t.priority, t.created_by, t.created_at,
+          snippet(tasks_fts, 1, '>>>', '<<<', '...', 32) as snippet
+          FROM tasks_fts fts
+          JOIN tasks t ON t.id = fts.rowid
+          WHERE tasks_fts MATCH ?`;
+        const params: unknown[] = [query];
+        if (opts.status) {
+          sql += " AND t.status = ?";
+          params.push(opts.status);
+        }
+        if (opts.assignee) {
+          sql += " AND t.assignee = ?";
+          params.push(opts.assignee);
+        }
+        sql += " ORDER BY fts.rank LIMIT ?";
+        params.push(Number(opts.limit));
+        const rows = db.prepare(sql).all(...params);
+        db.close();
+        output(rows, getFormat());
+      }
+    );
+
+  task
     .command("done")
     .argument("<id>", "Task ID")
     .option("--note <text>", "Completion note")

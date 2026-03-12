@@ -194,6 +194,38 @@ export function registerMailCommands(
     });
 
   mail
+    .command("search")
+    .argument("<query>", "Full-text search query")
+    .option("--from <agent>", "Filter by sender")
+    .option("--to <agent>", "Filter by recipient")
+    .option("--limit <n>", "Limit results", "20")
+    .description("Full-text search across messages")
+    .action(
+      (query: string, opts: { from?: string; to?: string; limit: string }) => {
+        const db = openDatabase(getDir());
+        let sql = `SELECT m.id, m.from_agent, m.to_agent, m.subject, m.created_at, m.priority, m.read,
+          snippet(messages_fts, 1, '>>>', '<<<', '...', 32) as snippet
+          FROM messages_fts fts
+          JOIN messages m ON m.id = fts.rowid
+          WHERE messages_fts MATCH ?`;
+        const params: unknown[] = [query];
+        if (opts.from) {
+          sql += " AND m.from_agent = ?";
+          params.push(opts.from);
+        }
+        if (opts.to) {
+          sql += " AND m.to_agent = ?";
+          params.push(opts.to);
+        }
+        sql += " ORDER BY fts.rank LIMIT ?";
+        params.push(Number(opts.limit));
+        const rows = db.prepare(sql).all(...params);
+        db.close();
+        output(rows, getFormat());
+      }
+    );
+
+  mail
     .command("count")
     .description("Count messages")
     .action(() => {
