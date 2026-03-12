@@ -1,0 +1,36 @@
+{
+  "name": "atos-cli",
+  "version": "0.1.0",
+  "description": "Agent teamwork in your terminal — CLI-first coordination for any AI agent runtime",
+  "type": "module",
+  "bin": {
+    "atos": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "agent",
+    "multi-agent",
+    "coordination",
+    "cli",
+    "teamwork",
+    "ai",
+    "llm"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "commander": "^12.0.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.19.37",
+    "typescript": "^5.9.3"
+  }
+}
