@@ -5,13 +5,13 @@
 A CLI-first coordination tool for multi-AI-agent teams. Works with **any** agent runtime — Claude Code, OpenCode, GitHub Copilot, Cursor, or your own scripts.
 
 ```bash
-npx atos-cli team init my-team
-npx atos-cli team join --name kira --role cto
-npx atos-cli team join --name raven --role devops
+npx @warren-wu/atos-cli team init my-team
+npx @warren-wu/atos-cli team join --name kira --role cto
+npx @warren-wu/atos-cli team join --name raven --role devops
 
-ATOS_AGENT=kira npx atos-cli mail send --to raven --subject "Deploy staging" --body "Ship it today"
-ATOS_AGENT=raven npx atos-cli mail inbox --unread
-ATOS_AGENT=raven npx atos-cli task list --mine
+ATOS_AGENT=kira npx @warren-wu/atos-cli mail send --to raven --subject "Deploy staging" --body "Ship it today"
+ATOS_AGENT=raven npx @warren-wu/atos-cli mail inbox --unread
+ATOS_AGENT=raven npx @warren-wu/atos-cli task list --mine
 ```
 
 ## Why
@@ -24,7 +24,7 @@ atos is none of those. It's a single CLI binary that any agent with bash access 
 |---|---|---|
 | Interface | Python SDK, Web UI | **CLI** (bash) |
 | Runtime | Framework-locked | **Any agent** |
-| Install | pip + dependencies + config | **`npx atos-cli`** |
+| Install | pip + dependencies + config | **`npx @warren-wu/atos-cli`** |
 | Storage | Databases, servers | **SQLite** (zero-config) |
 | Complexity | Graphs, DAGs, hierarchies | **Messages + Tasks** |
 
@@ -32,10 +32,10 @@ atos is none of those. It's a single CLI binary that any agent with bash access 
 
 ```bash
 # Use directly (no install needed)
-npx atos-cli <command>
+npx @warren-wu/atos-cli <command>
 
 # Or install globally
-npm install -g atos-cli
+npm install -g @warren-wu/atos-cli
 atos <command>
 ```
 
