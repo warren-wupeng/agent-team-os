@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.tgz
+
+# SQLite temp files
+.atos/*.db-journal
+.atos/*.db-wal
+.atos/*.db-shm
