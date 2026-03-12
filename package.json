@@ -1,10 +1,11 @@
 {
   "name": "@warren-wu/atos-cli",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Agent teamwork in your terminal — CLI-first coordination for any AI agent runtime",
   "type": "module",
   "bin": {
-    "atos": "dist/index.js"
+    "atos": "dist/index.js",
+    "atos-mcp": "dist/mcp.js"
   },
   "scripts": {
     "build": "tsc",
@@ -30,8 +31,10 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
     "better-sqlite3": "^11.0.0",
-    "commander": "^12.0.0"
+    "commander": "^12.0.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

@@ -13,7 +13,7 @@ const program = new Command();
 program
   .name("atos")
   .description("Agent teamwork in your terminal")
-  .version("0.2.1")
+  .version("0.3.0")
   .option("--dir <path>", ".atos directory location")
   .option("--format <fmt>", "Output format: json | human", "json")
   .option("--agent <name>", "Act as this agent (or set ATOS_AGENT env var)");
