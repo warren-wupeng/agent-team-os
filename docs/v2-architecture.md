@@ -444,10 +444,13 @@ Scope: `team init/join/members` + `mail send/inbox/read/reply` + `task create/li
 Tech stack:
 - TypeScript (Node.js)
 - Commander.js for CLI parsing
-- better-sqlite3 for embedded SQLite
-- Publish as `npx atos` / `npm i -g atos`
+- better-sqlite3 for embedded SQLite (sync API, prebuilt binaries, 177k+ dependents)
+- SQLite journal mode: DELETE (default, zero-config, perfectly git-friendly)
+- Publish as `npx atos-cli` / `npm i -g atos-cli` (bin name: `atos`)
 
 Storage: SQLite (`atos.db`) from day one. No file-based fallback — SQLite is the only structured storage backend.
+
+Message limits: Soft limit 4KB (warning), hard limit 16KB (reject). Configurable via `atos config set message.maxSize`.
 
 Deliverable: Any agent with bash access can send messages and track tasks.
 
@@ -457,13 +460,16 @@ Scope: MCP server wrapper + `status/who` + `sop list/show/start/step/complete` +
 
 MCP server is a thin wrapper (~200 lines) that calls CLI commands internally.
 
+SQLite upgrade: Switch to WAL mode for better write performance. `atos sync` runs `PRAGMA wal_checkpoint(TRUNCATE)` before committing to ensure only `atos.db` (no `-wal`/`-shm` files) enters git.
+
 ### Phase 3: Knowledge Integration + Remote
 
 Scope:
 - Optional knowledge backend integration (`atos knowledge search/ingest`)
-- OpenViking adapter as reference implementation
+- Generic `KnowledgeBackend` adapter interface with OpenViking as reference implementation
 - Remote server mode (`atos config set remote`) for distributed teams
 - Server-side storage (PostgreSQL) for remote mode
+- Optional message encryption (AES-256-GCM) for sensitive environments
 
 ### Phase 4: Ecosystem
 
@@ -473,13 +479,21 @@ Scope:
 - Dashboard UI for human observation (read-only web view of team state)
 - Plugin system for custom storage/knowledge backends
 
-## Open Questions
+## Resolved Questions
 
-1. ~~**Output format**: Is JSON the best default for AI consumption?~~ **Resolved**: JSON. See [Output Format RFC](./v2-output-format-rfc.md).
-2. **Package name**: Is `atos` available on npm? Fallback names?
-3. ~~**Conflict resolution**: How to handle git merge conflicts?~~ **Resolved**: SQLite eliminates file-level conflicts. Binary DB conflicts handled by operation replay (see Storage Architecture).
-4. **Message size limits**: Should we cap message body length to avoid token bloat?
-5. **Encryption**: Should mailbox messages support encryption for sensitive content?
-6. **SQLite WAL mode in git**: WAL (Write-Ahead Logging) creates `-wal` and `-shm` files. Should `atos sync` checkpoint WAL before committing, or always commit in journal mode?
-7. **Knowledge backend interface**: Should `atos knowledge` define a generic adapter interface, or ship OpenViking-specific only?
-8. **better-sqlite3 vs sql.js**: better-sqlite3 is faster (native bindings) but requires Node.js compilation. sql.js (Wasm) is portable but slower. Which for Phase 1?
+1. ~~**Output format**~~ **→ JSON**. See [Output Format RFC](./v2-output-format-rfc.md).
+2. ~~**Package name**~~ **→ `atos-cli`** (npm). `atos` is taken (inactive Express framework, last updated 2022). Alternatives `atos-cli`, `agent-atos`, `atos-agent`, `agent-team-os` are all available. Use `atos-cli` with `"bin": {"atos": ...}` so the command remains `atos`.
+3. ~~**Conflict resolution**~~ **→ SQLite + operation replay**. See Storage Architecture.
+4. ~~**Message size limits**~~ **→ Soft 4KB, hard 16KB**. 4KB ≈ 1000 tokens, reasonable per-message context cost. Over 4KB: CLI warns on stderr. Over 16KB: CLI rejects, suggests file attachment. Configurable: `atos config set message.maxSize <bytes>`.
+5. ~~**Encryption**~~ **→ Phase 1: none. Phase 3: optional AES-256-GCM**. atos is local project coordination, not cross-network secure messaging. For sensitive repos, use `git-crypt` or `age` to encrypt the entire `.atos/` directory. Per-message encryption deferred to Phase 3 as opt-in feature.
+6. ~~**SQLite WAL mode**~~ **→ Phase 1: DELETE mode. Phase 2: WAL + checkpoint before sync**. DELETE mode is zero-config and perfectly git-friendly (no extra files). In Phase 2, switch to WAL for better write performance; `atos sync` runs `PRAGMA wal_checkpoint(TRUNCATE)` to merge WAL back into main `.db` file before `git add`. `.gitignore` always excludes `*.db-wal` and `*.db-shm` as safety net.
+7. ~~**Knowledge backend interface**~~ **→ Generic interface, OpenViking reference impl**. Define a `KnowledgeBackend` TypeScript interface with 3 methods (`search`, `ingest`, `status`). Ship OpenViking adapter as the first (and possibly only) implementation. Interface cost is near-zero; prevents coupling to one vendor.
+8. ~~**better-sqlite3 vs sql.js**~~ **→ better-sqlite3**. Sync API is perfect for CLI (no async overhead). Prebuilt binaries cover 95%+ of Node.js LTS users. 11-24x faster than sql.js. 177k+ npm dependents prove ecosystem reliability. sql.js (Wasm) loads entire DB into RAM and has async API — poor fit for CLI. Trade-off: rare installation failures on edge platforms (WSL/Nix); document node-gyp prerequisites.
+
+## .gitignore (recommended)
+
+```
+.atos/*.db-journal
+.atos/*.db-wal
+.atos/*.db-shm
+```
