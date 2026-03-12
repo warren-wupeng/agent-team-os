@@ -20,6 +20,11 @@
     "ai",
     "llm"
   ],
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "license": "MIT",
   "engines": {
     "node": ">=18"
