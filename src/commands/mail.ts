@@ -1,7 +1,30 @@
 import { Command } from "commander";
+import { readFileSync } from "node:fs";
 import { openDatabase } from "../db.js";
 import { getAgent } from "../utils/config.js";
 import { output, checkMessageSize, type Format } from "../utils/output.js";
+
+/** Format Date as SQLite-compatible datetime string (YYYY-MM-DD HH:MM:SS) */
+function toSqliteDatetime(d: Date): string {
+  return d.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "");
+}
+
+/** Parse --since value: ISO 8601 string or relative shorthand (1h, 30m, 2d) */
+function parseSince(value: string): string {
+  const match = value.match(/^(\d+)([mhd])$/);
+  if (match) {
+    const amount = Number(match[1]);
+    const unit = match[2];
+    const ms = unit === "m" ? amount * 60_000 : unit === "h" ? amount * 3_600_000 : amount * 86_400_000;
+    return toSqliteDatetime(new Date(Date.now() - ms));
+  }
+  const d = new Date(value);
+  if (isNaN(d.getTime())) {
+    process.stderr.write(`Error: Invalid --since value "${value}". Use ISO 8601 or relative (e.g. 1h, 30m, 2d).\n`);
+    process.exit(1);
+  }
+  return toSqliteDatetime(d);
+}
 
 interface MessageRow {
   id: number;
@@ -27,24 +50,35 @@ export function registerMailCommands(
     .command("send")
     .requiredOption("--to <agent>", "Recipient agent")
     .requiredOption("--subject <subject>", "Message subject")
-    .requiredOption("--body <body>", "Message body")
+    .option("--body <body>", "Message body")
+    .option("--body-file <path>", "Read message body from file")
     .option("--priority <level>", "Priority (P0-P3)", "P2")
     .description("Send a message")
     .action(
       (opts: {
         to: string;
         subject: string;
-        body: string;
+        body?: string;
+        bodyFile?: string;
         priority: string;
       }) => {
+        let body: string;
+        if (opts.bodyFile) {
+          body = readFileSync(opts.bodyFile, "utf-8");
+        } else if (opts.body) {
+          body = opts.body;
+        } else {
+          process.stderr.write("Error: Either --body or --body-file is required.\n");
+          process.exit(1);
+        }
         const agent = getAgent(getAgentFlag());
-        checkMessageSize(opts.body);
+        checkMessageSize(body);
         const db = openDatabase(getDir());
         const result = db
           .prepare(
             "INSERT INTO messages (from_agent, to_agent, subject, body, priority) VALUES (?, ?, ?, ?, ?)"
           )
-          .run(agent, opts.to, opts.subject, opts.body, opts.priority);
+          .run(agent, opts.to, opts.subject, body, opts.priority);
         db.close();
         output(
           {
@@ -64,10 +98,11 @@ export function registerMailCommands(
     .command("inbox")
     .option("--unread", "Show only unread messages")
     .option("--from <agent>", "Filter by sender")
+    .option("--since <datetime>", "Show messages after this datetime (ISO 8601 or relative: 1h, 30m, 2d)")
     .option("--limit <n>", "Limit results", "20")
     .description("Read inbox")
     .action(
-      (opts: { unread?: boolean; from?: string; limit: string }) => {
+      (opts: { unread?: boolean; from?: string; since?: string; limit: string }) => {
         const agent = getAgent(getAgentFlag());
         const db = openDatabase(getDir());
         let sql = "SELECT id, from_agent, subject, created_at, priority, read FROM messages WHERE to_agent = ?";
@@ -78,6 +113,10 @@ export function registerMailCommands(
         if (opts.from) {
           sql += " AND from_agent = ?";
           params.push(opts.from);
+        }
+        if (opts.since) {
+          sql += " AND created_at >= ?";
+          params.push(parseSince(opts.since));
         }
         sql += " ORDER BY created_at DESC LIMIT ?";
         params.push(Number(opts.limit));
