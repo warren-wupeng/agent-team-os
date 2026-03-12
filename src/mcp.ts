@@ -15,7 +15,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { openDatabase, initDatabase } from "./db.js";
 import { resolve } from "node:path";
-import { readFileSync, readdirSync, existsSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync, writeFileSync } from "node:fs";
 
 // Parse CLI args for --dir and --agent
 const args = process.argv.slice(2);
@@ -459,6 +459,56 @@ server.tool(
   }
 );
 
+server.tool(
+  "sop_create",
+  "Create a new SOP file from a template or custom steps.",
+  {
+    name: z.string().describe("SOP name (used as filename)"),
+    role: z.string().describe("Agent role this SOP applies to"),
+    frequency: z.string().optional().default("on-demand").describe("Execution frequency (hourly, daily, on-demand)"),
+    description: z.string().optional().describe("Short description"),
+    template: z.enum(["hourly", "review", "onboard"]).optional().describe("Generate from built-in template"),
+    steps: z
+      .array(
+        z.object({
+          title: z.string(),
+          commands: z.array(z.string()),
+          guidance: z.string(),
+        })
+      )
+      .optional()
+      .describe("Custom steps (overrides template)"),
+  },
+  async ({ name, role, frequency, description, template, steps: customSteps }) => {
+    const sopsDir = findSopsDir();
+    if (!sopsDir) return { content: [{ type: "text", text: "Error: No .atos/sops directory found." }], isError: true };
+    const filePath = resolve(sopsDir, `${name}.md`);
+    if (existsSync(filePath)) return { content: [{ type: "text", text: `Error: SOP "${name}" already exists.` }], isError: true };
+
+    const desc = description || `${role} ${frequency} routine`;
+    const steps = customSteps || getMcpTemplateSteps(template || "hourly", role);
+
+    let md = `---\nname: ${name}\nrole: ${role}\nfrequency: ${frequency}\ndescription: ${desc}\n---\n\n`;
+    md += `# ${role.charAt(0).toUpperCase() + role.slice(1)} ${frequency.charAt(0).toUpperCase() + frequency.slice(1)} SOP\n\n`;
+    steps.forEach((step, i) => {
+      md += `## Step ${i + 1}: ${step.title}\n`;
+      if (step.commands.length > 0) {
+        md += "```bash\n" + step.commands.join("\n") + "\n```\n";
+      }
+      if (step.guidance) md += step.guidance + "\n";
+      md += "\n";
+    });
+
+    writeFileSync(filePath, md.trimEnd() + "\n");
+    return {
+      content: [{
+        type: "text",
+        text: JSON.stringify({ name, role, frequency, description: desc, file: filePath, steps: steps.length, status: "created" }, null, 2),
+      }],
+    };
+  }
+);
+
 // ── Config Tools ─────────────────────────────────────────────────
 
 server.tool(
@@ -532,6 +582,40 @@ function parseSinceValue(value: string): string {
   const d = new Date(value);
   if (isNaN(d.getTime())) throw new Error(`Invalid --since value "${value}"`);
   return toSqliteDatetime(d);
+}
+
+function getMcpTemplateSteps(template: string, role: string): { title: string; commands: string[]; guidance: string }[] {
+  switch (template) {
+    case "hourly":
+      return [
+        { title: "Check inbox", commands: ["atos mail inbox --unread"], guidance: "Read all unread messages. Identify action items, blockers, and informational updates." },
+        { title: "Check my tasks", commands: ["atos task list --mine --status open"], guidance: "Identify the highest priority task to work on this cycle." },
+        { title: "Execute work", commands: [], guidance: "Work on the top-priority open task. If blocked, update status and notify hub." },
+        { title: "Update progress", commands: [`atos task done <id> --note "<what you completed>"`], guidance: "Mark completed tasks as done." },
+        { title: "Report to hub", commands: [`atos mail send --to <hub> --subject "[STATUS] ${role} hourly update" --body "<summary>"`], guidance: "Send a brief status update." },
+      ];
+    case "review":
+      return [
+        { title: "Collect status", commands: ["atos mail inbox --since 1h"], guidance: "Gather all status updates from the last hour." },
+        { title: "Review task board", commands: ["atos task list --status open", "atos task list --status blocked"], guidance: "Check for overdue or blocked items." },
+        { title: "Identify blockers", commands: [], guidance: "List items that require leadership decision." },
+        { title: "Write digest", commands: [`atos mail send --to <leader> --subject "[STATUS] Review digest" --body "<summary>"`], guidance: "Synthesize findings into a structured digest." },
+      ];
+    case "onboard":
+      return [
+        { title: "Check team members", commands: ["atos team members"], guidance: "Review who is on the team." },
+        { title: "Read recent messages", commands: ["atos mail inbox --limit 10"], guidance: "Understand current state." },
+        { title: "Review open tasks", commands: ["atos task list --status open"], guidance: "Understand what needs attention." },
+        { title: "Review SOPs", commands: [`atos sop list --role ${role}`], guidance: "Read through your role's SOPs." },
+        { title: "Introduce yourself", commands: [`atos mail send --to <hub> --subject "[INFO] ${role} online" --body "Ready to work."`], guidance: "Notify the hub." },
+      ];
+    default:
+      return [
+        { title: "Check inbox", commands: ["atos mail inbox --unread"], guidance: "Process new messages." },
+        { title: "Execute work", commands: [], guidance: "Main work step." },
+        { title: "Report", commands: [`atos mail send --to <hub> --subject "[STATUS] ${role} update" --body "<summary>"`], guidance: "Send status update." },
+      ];
+  }
 }
 
 // ── Start Server ─────────────────────────────────────────────────

@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
 import { resolve, basename } from "node:path";
 import { output, type Format } from "../utils/output.js";
 
@@ -210,4 +210,203 @@ export function registerSopCommands(
         getFormat()
       );
     });
+
+  sop
+    .command("create")
+    .requiredOption("--name <name>", "SOP name (used as filename)")
+    .requiredOption("--role <role>", "Agent role this SOP applies to")
+    .option("--frequency <freq>", "Execution frequency (e.g. hourly, daily, on-demand)", "on-demand")
+    .option("--description <desc>", "Short description")
+    .option("--steps <json>", "Steps as JSON array: [{\"title\":\"...\",\"commands\":[...],\"guidance\":\"...\"}]")
+    .option("--template <type>", "Generate from template: hourly | review | onboard", "")
+    .description("Create a new SOP file")
+    .action(
+      (opts: {
+        name: string;
+        role: string;
+        frequency: string;
+        description?: string;
+        steps?: string;
+        template?: string;
+      }) => {
+        const sopsDir = findSopsDir(getDir());
+        if (!existsSync(sopsDir)) mkdirSync(sopsDir, { recursive: true });
+        const filePath = resolve(sopsDir, `${opts.name}.md`);
+
+        if (existsSync(filePath)) {
+          process.stderr.write(`Error: SOP "${opts.name}" already exists at ${filePath}\n`);
+          process.exit(1);
+        }
+
+        const desc = opts.description || `${opts.role} ${opts.frequency} routine`;
+        let steps: { title: string; commands: string[]; guidance: string }[];
+
+        if (opts.steps) {
+          try {
+            steps = JSON.parse(opts.steps);
+          } catch {
+            process.stderr.write("Error: --steps must be valid JSON array.\n");
+            process.exit(1);
+          }
+        } else if (opts.template) {
+          steps = getTemplateSteps(opts.template, opts.role);
+        } else {
+          steps = getTemplateSteps("hourly", opts.role);
+        }
+
+        // Build markdown
+        let md = `---\nname: ${opts.name}\nrole: ${opts.role}\nfrequency: ${opts.frequency}\ndescription: ${desc}\n---\n\n`;
+        md += `# ${capitalize(opts.role)} ${capitalize(opts.frequency)} SOP\n\n`;
+
+        steps.forEach((step, i) => {
+          md += `## Step ${i + 1}: ${step.title}\n`;
+          if (step.commands.length > 0) {
+            md += "```bash\n";
+            md += step.commands.join("\n") + "\n";
+            md += "```\n";
+          }
+          if (step.guidance) {
+            md += step.guidance + "\n";
+          }
+          md += "\n";
+        });
+
+        writeFileSync(filePath, md.trimEnd() + "\n");
+        output(
+          {
+            name: opts.name,
+            role: opts.role,
+            frequency: opts.frequency,
+            description: desc,
+            file: filePath,
+            steps: steps.length,
+            status: "created",
+          },
+          getFormat()
+        );
+      }
+    );
+}
+
+function capitalize(s: string): string {
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function getTemplateSteps(
+  template: string,
+  role: string
+): { title: string; commands: string[]; guidance: string }[] {
+  switch (template) {
+    case "hourly":
+      return [
+        {
+          title: "Check inbox",
+          commands: ["atos mail inbox --unread"],
+          guidance: "Read all unread messages. Identify action items, blockers, and informational updates.",
+        },
+        {
+          title: "Check my tasks",
+          commands: [`atos task list --mine --status open`],
+          guidance: "Identify the highest priority task to work on this cycle.",
+        },
+        {
+          title: "Execute work",
+          commands: [],
+          guidance:
+            "Work on the top-priority open task.\n- If blocked, update status and notify hub:\n  ```bash\n  atos task update <id> --status blocked\n  atos mail send --to <hub> --subject \"[BLOCKED] Task #<id>\" --body \"Blocked on: <reason>\"\n  ```",
+        },
+        {
+          title: "Update progress",
+          commands: [
+            `atos task done <id> --note "<what you completed>"`,
+          ],
+          guidance: "Mark completed tasks as done. For in-progress tasks, continue next cycle.",
+        },
+        {
+          title: "Report to hub",
+          commands: [
+            `atos mail send --to <hub> --subject "[STATUS] ${role} hourly update" --body "<summary of this hour>"`,
+          ],
+          guidance: "Send a brief status update: what you did, what's next, any blockers.",
+        },
+      ];
+
+    case "review":
+      return [
+        {
+          title: "Collect status from all agents",
+          commands: ["atos mail inbox --since 1h"],
+          guidance: "Gather all status updates received in the last hour.",
+        },
+        {
+          title: "Review task board",
+          commands: ["atos task list --status open", "atos task list --status blocked"],
+          guidance: "Check for overdue tasks, blocked items, and priority mismatches.",
+        },
+        {
+          title: "Identify blockers and decisions needed",
+          commands: [],
+          guidance: "List any items that require leadership decision or cross-team coordination.",
+        },
+        {
+          title: "Write digest",
+          commands: [
+            `atos mail send --to <leader> --subject "[STATUS] Review digest" --body "<completed, in-progress, blocked, decisions needed>"`,
+          ],
+          guidance: "Synthesize findings into a structured digest for the team lead.",
+        },
+      ];
+
+    case "onboard":
+      return [
+        {
+          title: "Check team members",
+          commands: ["atos team members"],
+          guidance: "Review who is on the team and their roles.",
+        },
+        {
+          title: "Read recent messages",
+          commands: ["atos mail inbox --limit 10"],
+          guidance: "Understand the current state of team communication.",
+        },
+        {
+          title: "Review open tasks",
+          commands: ["atos task list --status open"],
+          guidance: "Understand what work is in progress and what needs attention.",
+        },
+        {
+          title: "Review SOPs",
+          commands: [`atos sop list --role ${role}`],
+          guidance: "Read through your role's SOPs to understand expected workflows.",
+        },
+        {
+          title: "Introduce yourself",
+          commands: [
+            `atos mail send --to <hub> --subject "[INFO] ${role} online" --body "I'm online and ready to work. Reviewing current state."`,
+          ],
+          guidance: "Notify the hub that you are active and available.",
+        },
+      ];
+
+    default:
+      return [
+        {
+          title: "Check inbox",
+          commands: ["atos mail inbox --unread"],
+          guidance: "Process new messages.",
+        },
+        {
+          title: "Execute work",
+          commands: [],
+          guidance: "Describe the main work to be done in this step.",
+        },
+        {
+          title: "Report",
+          commands: [
+            `atos mail send --to <hub> --subject "[STATUS] ${role} update" --body "<summary>"`,
+          ],
+          guidance: "Send status update to the hub.",
+        },
+      ];
+  }
 }
